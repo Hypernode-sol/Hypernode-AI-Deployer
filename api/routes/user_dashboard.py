@@ -60,3 +60,4 @@ DASHBOARD_HTML = """
 def user_dashboard() -> Response:
     """Return a minimal HTML dashboard (static) for demo purposes."""
     return Response(content=DASHBOARD_HTML, media_type="text/html")
+
