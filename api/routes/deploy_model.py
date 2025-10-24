@@ -3,20 +3,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, conint, confloat
 from typing import Optional
 
-from ...core.model_registry import ModelRegistry
-from ...core.job_scheduler import JobScheduler, JobSpec
-from ...core.training_orchestrator import TrainingOrchestrator
-from ...core.telemetry_collector import TelemetryCollector
-from ...core.reward_manager_adapter import RewardManagerAdapter
+from ..auth import auth_required
+from ..state import registry as _registry, scheduler as _scheduler
+from ...core.job_scheduler import JobSpec
 
 router = APIRouter(tags=["deploy"])
 
-_registry = ModelRegistry()
-_scheduler = JobScheduler(_registry)
-_orchestrator = TrainingOrchestrator(_scheduler.store)
-_orchestrator.start()
-_telemetry = TelemetryCollector()
-_reward_adapter = RewardManagerAdapter(_telemetry)
 
 
 class DeployRequest(BaseModel):
@@ -36,7 +28,9 @@ class DeployResponse(BaseModel):
 
 
 @router.post("/deploy_model", response_model=DeployResponse)
-def deploy_model(req: DeployRequest) -> DeployResponse:
+from fastapi import Depends
+
+def deploy_model(req: DeployRequest, principal: str = Depends(auth_required)) -> DeployResponse:
     """Validate and submit a training job to the scheduler."""
     try:
         status = _scheduler.submit(JobSpec(**req.dict()))

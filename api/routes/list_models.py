@@ -6,7 +6,7 @@ from typing import List
 from ...core.model_registry import ModelRegistry, ModelSpec
 
 router = APIRouter(tags=["models"])
-_registry = ModelRegistry()
+_registry = ModelRegistry()  # kept local to allow hot-reload; optional
 
 
 class ModelDTO(BaseModel):

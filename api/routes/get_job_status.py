@@ -3,13 +3,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
 
-from ...core.job_scheduler import JobScheduler, JobStatus
-from ...core.model_registry import ModelRegistry
+from ...core.job_scheduler import JobStatus
+from ..auth import auth_required
+from ..state import scheduler as _scheduler
+from fastapi import Depends
 
 router = APIRouter(tags=["status"])
 
-_registry = ModelRegistry()
-_scheduler = JobScheduler(_registry)
 
 
 class JobStatusDTO(BaseModel):
@@ -31,7 +31,7 @@ class JobStatusDTO(BaseModel):
 
 
 @router.get("/get_job_status/{job_id}", response_model=JobStatusDTO)
-def get_job_status(job_id: str) -> JobStatusDTO:
+def get_job_status(job_id: str, principal: str = Depends(auth_required)) -> JobStatusDTO:
     """Return current job status and progress."""
     status = _scheduler.store.get(job_id)
     if not status:
