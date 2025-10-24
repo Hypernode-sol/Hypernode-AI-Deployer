@@ -1,6 +1,6 @@
 # Hypernode-AI-Deployer
 
-The **Hypernode AI Deployer** is the distributed layer of the Hypernode Network that enables users to **deploy, fine-tune, and host AI models** (LLMs, Vision, Speech, etc.) using decentralized GPU power from the network’s nodes.  
+The Hypernode AI Deployer is the distributed layer of the Hypernode Network that enables users to **deploy, fine-tune, and host AI models** (LLMs, Vision, Speech, etc.) using decentralized GPU power from the network’s nodes.  
 It transforms Hypernode into an **AI orchestration layer**, allowing anyone to train open-source models securely, efficiently, and at scale.
 
 ---
