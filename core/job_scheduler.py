@@ -1,86 +1,57 @@
 """
-Job Scheduler module.
+Model Registry module.
 
-Responsible for validating incoming training jobs, selecting eligible GPU nodes,
-and placing jobs into the orchestrator queue. This simplified reference uses an
-in-memory store. Replace with a durable queue (e.g., Redis, NATS, Kafka) in prod.
+Provides a simple abstraction to list, register, and retrieve model blueprints
+from external catalogs (e.g., Hugging Face, Ollama). In production, this module
+should handle caching, compatibility checks (GPU/VRAM/quantization), and
+container build templates.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
-from uuid import uuid4
-from datetime import datetime, timezone
+import yaml
+from pathlib import Path
 
-from .model_registry import ModelRegistry, ModelSpec
-
-
-@dataclass
-class JobSpec:
-    """User-submitted job specification."""
-    model_name: str
-    dataset_uri: str  # e.g., ipfs://..., s3://..., file://...
-    epochs: int = 1
-    learning_rate: float = 5e-5
-    batch_size: int = 1
-    seed: int = 42
-    user_id: Optional[str] = None
+MODELS_YAML = Path(__file__).resolve().parents[1] / "configs" / "models.yaml"
 
 
-@dataclass
-class JobStatus:
-    job_id: str
-    status: str  # queued | running | completed | failed | cancelled
-    created_at: datetime
-    updated_at: datetime
-    progress: float = 0.0  # 0..1
-    message: str = ""
-    checkpoints: List[str] = field(default_factory=list)
+@dataclass(frozen=True)
+class ModelSpec:
+    """Static description of a base model available to the network."""
+    name: str
+    provider: str  # e.g. huggingface, ollama
+    reference: str # e.g. meta-llama/Llama-3-8B
+    task: str      # e.g. text-generation, embeddings, image-generation
+    min_vram_gb: int
+    quantization: Optional[str] = None  # e.g. Q4_K_M, bitsandbytes-4bit
+    notes: Optional[str] = None
 
 
-class InMemoryJobStore:
-    """Naive in-memory job store. Replace with a persistent backend in prod."""
-    def __init__(self) -> None:
-        self.jobs: Dict[str, JobStatus] = {}
+class ModelRegistry:
+    """Load and serve model specifications from configs/models.yaml."""
 
-    def create(self, status: JobStatus) -> None:
-        self.jobs[status.job_id] = status
+    def __init__(self, config_path: Path = MODELS_YAML) -> None:
+        self.config_path = config_path
+        self._models: Dict[str, ModelSpec] = {}
+        self._load()
 
-    def get(self, job_id: str) -> Optional[JobStatus]:
-        return self.jobs.get(job_id)
+    def _load(self) -> None:
+        if not self.config_path.exists():
+            raise FileNotFoundError(f"models.yaml not found at {self.config_path}")
+        data = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
+        registry = {}
+        for item in data.get("models", []):
+            spec = ModelSpec(**item)
+            registry[spec.name] = spec
+        self._models = registry
 
-    def update(self, job_id: str, **kwargs) -> Optional[JobStatus]:
-        job = self.jobs.get(job_id)
-        if not job:
-            return None
-        for k, v in kwargs.items():
-            setattr(job, k, v)
-        job.updated_at = datetime.now(timezone.utc)
-        return job
+    def list_models(self) -> List[ModelSpec]:
+        return list(self._models.values())
 
-    def list(self) -> List[JobStatus]:
-        return list(self.jobs.values())
+    def get(self, name: str) -> Optional[ModelSpec]:
+        return self._models.get(name)
 
+    def refresh(self) -> None:
+        """Reload from disk. Useful when updating models.yaml at runtime."""
+        self._load()
 
-class JobScheduler:
-    """Validate jobs against ModelRegistry and enqueue for orchestration."""
-    def __init__(self, registry: ModelRegistry, store: Optional[InMemoryJobStore] = None) -> None:
-        self.registry = registry
-        self.store = store or InMemoryJobStore()
-
-    def submit(self, spec: JobSpec) -> JobStatus:
-        model: ModelSpec = self.registry.get(spec.model_name)
-        if not model:
-            raise ValueError(f"Unknown model '{spec.model_name}'. Call /api/list_models to discover.")
-
-        job_id = str(uuid4())
-        now = datetime.now(timezone.utc)
-        status = JobStatus(
-            job_id=job_id,
-            status="queued",
-            created_at=now,
-            updated_at=now,
-            progress=0.0,
-            message="Job accepted and queued for orchestration.",
-        )
-        self.store.create(status)
-        return status
