@@ -1,9 +1,6 @@
 # 🧠 Hypernode AI Deployer  
 > Distributed AI Model Deployer — serving, fine-tuning, and managing LLMs across GPU nodes.
 
-![Hypernode Banner](https://hypernodesolana.org/assets/banner.png)
-
----
 
 ## 🚀 Overview
 
