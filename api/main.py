@@ -1,30 +1,80 @@
-"""
-FastAPI entrypoint for Hypernode-AI-Deployer.
+import os
+import uuid
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import httpx
 
-Exposes endpoints to list models, submit training jobs, check status, and render
-a lightweight HTML dashboard. Replace in-memory stores with persistent services
-for production. All comments are written in English by convention.
-"""
-from __future__ import annotations
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://vllm:8000/v1")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+API_PORT = int(os.getenv("API_PORT", "8080"))
 
-from .routes.list_models import router as list_models_router
-from .routes.deploy_model import router as deploy_router
-from .routes.get_job_status import router as status_router
-from .routes.user_dashboard import router as dashboard_router
+app = FastAPI(title="Hypernode AI Deployer API")
 
-app = FastAPI(title="Hypernode AI Deployer", version="0.1.0")
+# --------- Schemas ---------
+class DeployRequest(BaseModel):
+    base_model: str
+    backend: str  # "vllm" or "ollama"
+    finetune_checkpoint: str | None = None  # s3://bucket/path or local path
+    params: dict | None = None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --------- Helpers ---------
+async def vllm_list_models():
+    # vLLM OpenAI-compatible: not all builds expose /models; fallback to using requested model names
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(f"{VLLM_BASE_URL}/models")
+            if r.status_code == 200:
+                return r.json()
+    except Exception:
+        pass
+    return {"data": []}
 
-app.include_router(list_models_router, prefix="/api")
-app.include_router(deploy_router, prefix="/api")
-app.include_router(status_router, prefix="/api")
-app.include_router(dashboard_router, prefix="/api")
+async def ollama_list_models():
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+        r.raise_for_status()
+        return r.json()
+
+# --------- Routes ---------
+@app.get("/api/list_models")
+async def list_models():
+    v = await vllm_list_models()
+    try:
+        o = await ollama_list_models()
+    except Exception:
+        o = {"models": []}
+    return {"vllm": v, "ollama": o}
+
+@app.post("/api/deploy_model")
+async def deploy_model(req: DeployRequest):
+    job_id = str(uuid.uuid4())
+    if req.backend == "vllm":
+        # vLLM "deployment" is typically already running; we can optionally warmup via a quick request
+        payload = {
+            "model": req.base_model,
+            "messages": [{"role":"user","content":"ping"}],
+            "max_tokens": 4
+        }
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                await client.post(f"{VLLM_BASE_URL}/chat/completions", json=payload)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"vLLM warmup failed: {e}")
+        return {"job_id": job_id, "status": "deployed", "backend": "vllm", "model": req.base_model}
+
+    elif req.backend == "ollama":
+        # Ensure model exists (create via Modelfile if needed)
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                # Try to pull base model (if FROM <model> in Modelfile already exists, this is a no‑op)
+                await client.post(f"{OLLAMA_BASE_URL}/api/pull", json={"name": req.base_model})
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ollama pull failed: {e}")
+        return {"job_id": job_id, "status": "deployed", "backend": "ollama", "model": req.base_model}
+    else:
+        raise HTTPException(status_code=400, detail="backend must be 'vllm' or 'ollama'")
+
+@app.get("/api/get_job_status")
+async def get_job_status(job_id: str):
+    # Minimal stub for now
+    return {"job_id": job_id, "status": "ok"}
