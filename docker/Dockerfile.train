@@ -1,8 +1,0 @@
-# Training container for distributed fine-tuning
-FROM hypernode/ai-deployer-base:latest
-
-WORKDIR /srv/train
-COPY . /srv/train
-
-ENV PYTHONUNBUFFERED=1
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]

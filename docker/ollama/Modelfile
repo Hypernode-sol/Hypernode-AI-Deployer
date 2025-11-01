@@ -1,6 +1,0 @@
-# Minimal Modelfile example for Qwen2.5 7B Instruct (GGUF variant)
-FROM qwen2.5-7b-instruct-q5_0.gguf
-TEMPLATE "{{ .Prompt }}"
-PARAM temperature 0.2
-# If you have a LoRA adapter converted to GGUF, uncomment:
-# ADAPTER /workspace/checkpoints/qwen7b_my_lora.gguf
