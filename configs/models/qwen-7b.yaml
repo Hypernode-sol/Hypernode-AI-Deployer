@@ -1,3 +1,0 @@
-name: qwen2.5-7b-instruct
-backend: ollama
-template: "{{ .Prompt }}"
